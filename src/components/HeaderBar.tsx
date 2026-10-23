@@ -101,9 +101,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
           {/* Pinned Viewport Indicator */}
           {pinnedNodeName && (
-            <div className="hidden lg:flex items-center gap-1.5 bg-cyan-950/40 border border-cyan-500/30 px-2 py-1 rounded text-xs font-mono text-cyan-300">
-              <Pin className="w-3 h-3 text-cyan-400 fill-cyan-400" />
-              <span>Viewing: {pinnedNodeName}</span>
+            <div className="hidden xl:flex items-center gap-1.5 bg-[#121315] border border-[#2D3139] px-2 py-1 rounded-md text-[11px] font-mono text-cyan-300 whitespace-nowrap">
+              <Pin className="w-3 h-3 text-cyan-400 fill-cyan-400 shrink-0" />
+              <span className="text-neutral-500">View:</span>
+              <span className="font-semibold text-cyan-300 max-w-[130px] truncate">{pinnedNodeName}</span>
             </div>
           )}
         </div>

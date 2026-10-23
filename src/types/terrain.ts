@@ -14,6 +14,7 @@ export type NodeType =
   | 'hydraulic'
   | 'thermal'
   | 'terraces'
+  | 'snow'
   | 'autolevel'
   | 'clamp'
   | 'invert'
@@ -72,6 +73,7 @@ export interface TerrainDataMap {
   flowmap: Float32Array;     // Channel G: 0.0 - 1.0 (water runoff)
   deposition: Float32Array;  // Channel B: 0.0 - 1.0 (sediment)
   wear: Float32Array;        // Channel A: 0.0 - 1.0 (wear & slope)
+  snowmap?: Float32Array;    // World Machine Snow Accumulation Depth
   colorMap?: Uint8Array;     // RGBA SatMap satellite color buffer
 }
 
@@ -106,11 +108,15 @@ export interface PBRMaterialSettings {
   // Layer 3: Grass & Vegetation
   grassColor: string;
   grassRoughness: number;
-  // Layer 4: Glacial Snow
+  // Layer 4: World Machine Glacial Snow
+  snowEnabled: boolean;
   snowColor: string;
   snowRoughness: number;
   snowHeight: number;
-  // Layer 5: Wet Riverbed
+  snowMeltRate: number;
+  snowSlumpAngle: number;
+  // Layer 5: Coastal Beach & Wet Shoreline
+  beachColor: string;
   waterColor: string;
   wetness: number;
   // Micro-texture normal scaling
@@ -179,4 +185,4 @@ export interface TerrainPreset {
   pinnedNodeId?: string;
 }
 
-export type InspectorTab = 'node' | 'pbr' | 'lighting' | 'ocean' | 'sculpt';
+export type InspectorTab = 'node' | 'pbr' | 'snow' | 'lighting' | 'ocean' | 'sculpt';

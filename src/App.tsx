@@ -84,9 +84,13 @@ export default function App() {
       screeRoughness: 0.9,
       grassColor: '#45582e',
       grassRoughness: 0.75,
+      snowEnabled: true,
       snowColor: '#f4f7fc',
       snowRoughness: 0.28,
-      snowHeight: 0.65,
+      snowHeight: 0.55,
+      snowMeltRate: 0.14,
+      snowSlumpAngle: 0.40,
+      beachColor: '#7e735e',
       waterColor: '#1d3e4c',
       wetness: 0.85,
       normalStrength: 1.5,
@@ -165,6 +169,71 @@ export default function App() {
       setPinnedNodeId(preset.pinnedNodeId);
     } else if (preset.nodes.length > 0) {
       setPinnedNodeId(preset.nodes[preset.nodes.length - 1].id);
+    }
+
+    // Adapt PBR material and ocean parameters to the selected geological biome
+    if (preset.id === 'zion_canyonlands') {
+      setViewportSettings((prev) => ({
+        ...prev,
+        ocean: { ...prev.ocean, waterLevel: 0.08, enabled: false },
+        pbr: {
+          ...prev.pbr,
+          snowEnabled: false,
+          rockColor: '#9e462a',
+          rockRoughness: 0.82,
+          screeColor: '#ba6f45',
+          screeRoughness: 0.88,
+          grassColor: '#7a7343',
+          grassRoughness: 0.85,
+        },
+      }));
+    } else if (preset.id === 'iceland_volcano') {
+      setViewportSettings((prev) => ({
+        ...prev,
+        ocean: { ...prev.ocean, waterLevel: 0.22, enabled: true },
+        pbr: {
+          ...prev.pbr,
+          snowEnabled: false,
+          rockColor: '#282b30',
+          rockRoughness: 0.78,
+          screeColor: '#3d4147',
+          screeRoughness: 0.85,
+          grassColor: '#3a6627',
+          grassRoughness: 0.65,
+        },
+      }));
+    } else if (preset.id === 'patagonia_spires') {
+      setViewportSettings((prev) => ({
+        ...prev,
+        ocean: { ...prev.ocean, waterLevel: 0.18, enabled: true },
+        pbr: {
+          ...prev.pbr,
+          snowEnabled: true,
+          rockColor: '#474b54',
+          rockRoughness: 0.82,
+          screeColor: '#6f7480',
+          screeRoughness: 0.88,
+          grassColor: '#3d4d38',
+          grassRoughness: 0.78,
+          snowHeight: 0.52,
+        },
+      }));
+    } else if (preset.id === 'alpine_peaks') {
+      setViewportSettings((prev) => ({
+        ...prev,
+        ocean: { ...prev.ocean, waterLevel: 0.16, enabled: true },
+        pbr: {
+          ...prev.pbr,
+          snowEnabled: true,
+          rockColor: '#534d45',
+          rockRoughness: 0.85,
+          screeColor: '#8c7d6e',
+          screeRoughness: 0.9,
+          grassColor: '#45582e',
+          grassRoughness: 0.75,
+          snowHeight: 0.55,
+        },
+      }));
     }
   };
 

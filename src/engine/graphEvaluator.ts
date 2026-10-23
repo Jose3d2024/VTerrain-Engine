@@ -26,6 +26,7 @@ import {
 import {
   simulateHydraulicErosion,
   simulateThermalErosion,
+  simulateSnowAccumulation,
   computeSlopeMap,
 } from './erosion';
 
@@ -200,6 +201,24 @@ export const NODE_REGISTRY: Record<NodeType, NodeMetadata> = {
       strataBlend: 0.85,
     },
   },
+  snow: {
+    type: 'snow',
+    name: 'Snow (Accumulation & Slump)',
+    category: 'filter',
+    description: 'World Machine style snow fall, gravity avalanching down cliffs, and accumulation in glacial cirques',
+    inputs: [{ id: 'in', name: 'Terrain', type: 'terrain', direction: 'in' }],
+    outputs: [
+      { id: 'out', name: 'Terrain', type: 'terrain', direction: 'out', description: 'Snow-covered terrain' },
+      { id: 'snow', name: 'Snow Depth', type: 'mask', direction: 'out', description: 'Snow pack depth mask' },
+    ],
+    defaultParams: {
+      snowfall: 0.65,
+      snowLine: 0.52,
+      meltRate: 0.15,
+      slumpAngle: 0.38,
+      iterations: 12,
+    },
+  },
   autolevel: {
     type: 'autolevel',
     name: 'AutoLevel (Normalize)',
@@ -363,11 +382,19 @@ export function evaluateNode(
       const lac = p.lacunarity ?? 2.1;
       const pers = p.persistence ?? 0.52;
       const ridgePower = p.ridgePower ?? 2.4;
+      const halfW = width / 2;
+      const halfH = height / 2;
 
       for (let y = 0; y < height; y++) {
         const row = y * width;
+        const ny = (y - halfH) / halfH;
         for (let x = 0; x < width; x++) {
-          data.heightmap[row + x] = mountain2D(simplex, x * scale, y * scale, octaves, lac, pers, ridgePower);
+          const nx = (x - halfW) / halfW;
+          const dist = Math.sqrt(nx * nx + ny * ny);
+          const islandMask = Math.max(0.0, 1.0 - Math.pow(dist / 0.94, 2.8));
+
+          const rawH = mountain2D(simplex, x * scale, y * scale, octaves, lac, pers, ridgePower);
+          data.heightmap[row + x] = Math.pow(rawH, 1.1) * islandMask;
         }
       }
       data.wear = computeSlopeMap(data.heightmap, width, height);
@@ -488,11 +515,18 @@ export function evaluateNode(
       const lac = p.lacunarity ?? 2.1;
       const pers = p.persistence ?? 0.52;
       const sharpness = p.sharpness ?? 2.0;
+      const halfW = width / 2;
+      const halfH = height / 2;
 
       for (let y = 0; y < height; y++) {
         const row = y * width;
+        const ny = (y - halfH) / halfH;
         for (let x = 0; x < width; x++) {
-          data.heightmap[row + x] = ridged2D(simplex, x * scale, y * scale, octaves, lac, pers, sharpness);
+          const nx = (x - halfW) / halfW;
+          const dist = Math.sqrt(nx * nx + ny * ny);
+          const islandMask = Math.max(0.0, 1.0 - Math.pow(dist / 0.94, 2.6));
+          const val = ridged2D(simplex, x * scale, y * scale, octaves, lac, pers, sharpness);
+          data.heightmap[row + x] = Math.pow(val, 1.2) * islandMask;
         }
       }
       data.wear = computeSlopeMap(data.heightmap, width, height);
@@ -571,6 +605,30 @@ export function evaluateNode(
       });
       data.wear = computeSlopeMap(data.heightmap, width, height);
       return { dataMap: data };
+    }
+
+    case 'snow': {
+      const inData = (inputs['in'] as TerrainDataMap) || createEmptyDataMap(width, height);
+      const simulated = simulateSnowAccumulation(inData.heightmap, width, height, {
+        snowfall: p.snowfall ?? 0.65,
+        snowLine: p.snowLine ?? 0.52,
+        meltRate: p.meltRate ?? 0.15,
+        slumpAngle: p.slumpAngle ?? 0.38,
+        iterations: p.iterations ?? 12,
+      });
+      const snowData: TerrainDataMap = {
+        ...cloneDataMap(inData),
+        heightmap: simulated.heightmap,
+        snowmap: simulated.snowMap,
+        wear: computeSlopeMap(simulated.heightmap, width, height),
+      };
+      return {
+        dataMap: snowData,
+        namedOutputs: {
+          out: snowData,
+          snow: simulated.snowMap,
+        },
+      };
     }
 
     case 'autolevel': {

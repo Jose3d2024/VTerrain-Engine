@@ -258,3 +258,103 @@ export function simulateThermalErosion(
 
   return result;
 }
+
+// World Machine Snow Device: Snow Accumulation, Avalanching & Cirque Settling
+export interface SnowDeviceParams {
+  snowfall: number;      // Precipitation intensity (0.1 to 1.0)
+  snowLine: number;      // Freezing altitude boundary (0.2 to 0.85)
+  meltRate: number;      // Transition / melting softness (0.05 to 0.4)
+  slumpAngle: number;    // Angle of repose where snow slides off steep cliffs (0.25 to 0.65)
+  iterations: number;    // Avalanche settlement passes (4 to 20)
+}
+
+export function simulateSnowAccumulation(
+  srcHeight: Float32Array,
+  width: number,
+  height: number,
+  params: Partial<SnowDeviceParams> = {}
+): {
+  heightmap: Float32Array;
+  snowMap: Float32Array;
+} {
+  const p: SnowDeviceParams = {
+    snowfall: params.snowfall ?? 0.6,
+    snowLine: params.snowLine ?? 0.52,
+    meltRate: params.meltRate ?? 0.15,
+    slumpAngle: params.slumpAngle ?? 0.38,
+    iterations: params.iterations ?? 12,
+  };
+
+  const len = width * height;
+  const heightmap = new Float32Array(srcHeight);
+  const snowMap = new Float32Array(len);
+  const slope = computeSlopeMap(srcHeight, width, height);
+
+  // 1. Initial Snowfall deposition
+  for (let i = 0; i < len; i++) {
+    const h = srcHeight[i];
+    const s = slope[i];
+
+    // Snow line altitude gate with melt gradient
+    const altFactor = clamp((h - (p.snowLine - p.meltRate)) / (p.meltRate * 1.5 + 0.02), 0.0, 1.0);
+    
+    // Slump inhibition: steep cliffs cannot hold fresh snow
+    const adhereFactor = s < p.slumpAngle ? 1.0 : Math.max(0.0, 1.0 - (s - p.slumpAngle) * 3.2);
+
+    snowMap[i] = p.snowfall * altFactor * adhereFactor * 0.25;
+  }
+
+  // 2. Avalanching / Slump down gravity gradient into cirques and couloirs
+  for (let iter = 0; iter < p.iterations; iter++) {
+    for (let y = 1; y < height - 1; y++) {
+      const row = y * width;
+      const rowUp = (y - 1) * width;
+      const rowDn = (y + 1) * width;
+
+      for (let x = 1; x < width - 1; x++) {
+        const idx = row + x;
+        const currentSnow = snowMap[idx];
+        if (currentSnow < 0.001) continue;
+
+        // Current total height (bedrock + snow)
+        const totalH = heightmap[idx] + currentSnow;
+
+        // 4 neighbors
+        const nL = heightmap[row + x - 1] + snowMap[row + x - 1];
+        const nR = heightmap[row + x + 1] + snowMap[row + x + 1];
+        const nU = heightmap[rowUp + x] + snowMap[rowUp + x];
+        const nD = heightmap[rowDn + x] + snowMap[rowDn + x];
+
+        const diffL = totalH - nL;
+        const diffR = totalH - nR;
+        const diffU = totalH - nU;
+        const diffD = totalH - nD;
+
+        let maxDrop = 0;
+        let targetIdx = -1;
+
+        if (diffL > 0.015 && diffL > maxDrop) { maxDrop = diffL; targetIdx = row + x - 1; }
+        if (diffR > 0.015 && diffR > maxDrop) { maxDrop = diffR; targetIdx = row + x + 1; }
+        if (diffU > 0.015 && diffU > maxDrop) { maxDrop = diffU; targetIdx = rowUp + x; }
+        if (diffD > 0.015 && diffD > maxDrop) { maxDrop = diffD; targetIdx = rowDn + x; }
+
+        if (targetIdx !== -1 && maxDrop > 0.02) {
+          // Slide snow down slope
+          const slide = Math.min(currentSnow * 0.45, maxDrop * 0.25);
+          snowMap[idx] -= slide;
+          snowMap[targetIdx] += slide;
+        }
+      }
+    }
+  }
+
+  // 3. Add accumulated snow pack volume to terrain
+  for (let i = 0; i < len; i++) {
+    heightmap[i] = clamp(heightmap[i] + snowMap[i] * 0.35, 0.0, 1.0);
+    // Normalize snow depth for shader
+    snowMap[i] = clamp(snowMap[i] * 4.0, 0.0, 1.0);
+  }
+
+  return { heightmap, snowMap };
+}
+

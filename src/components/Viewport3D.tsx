@@ -175,7 +175,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
+    renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -295,6 +295,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       uniform vec3 uSnowColor;
       uniform float uSnowRoughness;
       uniform float uSnowHeight;
+      uniform float uSnowEnabled;
+      uniform float uSnowMeltRate;
+      uniform float uSnowSlumpAngle;
+      uniform vec3 uBeachColor;
+      uniform float uWaterLevel;
       uniform vec3 uWaterColor;
       uniform float uNormalStrength;
       uniform float uTriplanarScale;
@@ -308,20 +313,30 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       varying vec3 vNormal;
       varying vec3 vWorldPosition;
 
-      // Procedural micro-normals for granite rock, gravel, and grass
-      vec3 getMicroNormal(vec3 worldPos, vec3 geomNormal, float slope) {
-        float scale = uTriplanarScale * 6.0;
-        float n1 = sin(worldPos.x * scale) * cos(worldPos.z * scale);
-        float n2 = sin(worldPos.x * scale * 2.3 + 1.2) * cos(worldPos.z * scale * 2.3);
-        float microNoise = (n1 + n2 * 0.5) * uNormalStrength * 0.14;
+      // True Triplanar Micro-Normals: Eliminates vertical stretching on steep cliffs
+      vec3 getTriplanarNormal(vec3 worldPos, vec3 geomNormal, float slope) {
+        vec3 blendWeights = pow(abs(geomNormal), vec3(4.0));
+        blendWeights /= max(0.0001, blendWeights.x + blendWeights.y + blendWeights.z);
 
-        // Rock cliff striations
-        float cliffStriation = sin(worldPos.y * scale * 4.0) * slope * uNormalStrength * 0.16;
+        float s = uTriplanarScale * 4.5;
 
-        vec3 perturbed = geomNormal;
-        perturbed.x += microNoise + cliffStriation * 0.6;
-        perturbed.z += microNoise;
-        return normalize(perturbed);
+        // X-face (YZ): cliff facing East/West
+        float nYZ1 = sin(worldPos.z * s * 2.2) * cos(worldPos.y * s * 3.6);
+        float nYZ2 = sin(worldPos.y * s * 5.5) * 0.55; // horizontal strata
+        vec3 normX = vec3(0.0, nYZ2 * 0.18, nYZ1 * 0.14);
+
+        // Z-face (XY): cliff facing North/South
+        float nXY1 = sin(worldPos.x * s * 2.2) * cos(worldPos.y * s * 3.6);
+        float nXY2 = sin(worldPos.y * s * 5.5) * 0.55; // horizontal strata
+        vec3 normZ = vec3(nXY1 * 0.14, nXY2 * 0.18, 0.0);
+
+        // Y-face (XZ): top surfaces (scree, grass, snow)
+        float nXZ1 = sin(worldPos.x * s * 2.8) * cos(worldPos.z * s * 2.8);
+        float nXZ2 = sin(worldPos.x * s * 6.5 + 1.2) * cos(worldPos.z * s * 6.5) * 0.5;
+        vec3 normY = vec3(nXZ1 * 0.12, 0.0, nXZ2 * 0.12);
+
+        vec3 blendedPerturb = normX * blendWeights.x + normY * blendWeights.y + normZ * blendWeights.z;
+        return normalize(geomNormal + blendedPerturb * uNormalStrength);
       }
 
       void main() {
@@ -331,16 +346,16 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         vec3 H = normalize(L + V);
 
         float slope = 1.0 - max(0.0, dot(N, vec3(0.0, 1.0, 0.0)));
-        vec3 detailedN = getMicroNormal(vWorldPosition, N, slope);
+        vec3 detailedN = getTriplanarNormal(vWorldPosition, N, slope);
 
         // Render Style 1: Gaea Clay Mode
         if (uRenderStyle == 1) {
-          vec3 clayBase = vec3(0.74, 0.70, 0.65);
+          vec3 clayBase = vec3(0.72, 0.69, 0.65);
           float NdotL = max(0.0, dot(detailedN, L));
-          float diffuse = pow(NdotL * 0.7 + 0.3, 1.3);
+          float diffuse = pow(NdotL * 0.72 + 0.28, 1.3);
           float ao = 1.0 - smoothstep(0.3, 0.8, vWear) * 0.35 * uAmbientOcclusion;
-          float rim = pow(1.0 - max(0.0, dot(N, V)), 3.0) * 0.28;
-          vec3 direct = clayBase * diffuse * uSunIntensity;
+          float rim = pow(1.0 - max(0.0, dot(N, V)), 3.0) * 0.25;
+          vec3 direct = clayBase * diffuse * (uSunIntensity * 0.85);
           vec3 col = (clayBase * 0.45 * ao + direct + rim) * uExposure;
           gl_FragColor = vec4(col, 1.0);
           return;
@@ -387,14 +402,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         if (uRenderStyle == 2 && uHasColorMap > 0.5) {
           vec3 satAlbedo = texture2D(uColorMap, vUv).rgb;
           float NdotL = max(0.0, dot(detailedN, L));
-          float diffuse = pow(NdotL * 0.7 + 0.3, 1.2);
-          vec3 col = (uAmbientColor * satAlbedo * 1.2 + uSunColor * satAlbedo * diffuse * uSunIntensity) * uExposure;
+          float diffuse = pow(NdotL * 0.72 + 0.28, 1.25);
+          vec3 col = (uAmbientColor * satAlbedo * 0.95 + uSunColor * satAlbedo * diffuse * (uSunIntensity * 0.85)) * (uExposure * 0.95);
           gl_FragColor = vec4(col, 1.0);
           return;
         }
 
-        // Mode 0: Substance 3D Painter & World Machine Multi-Layer PBR
-        // 1. Base Alpine Grassland / Valley Meadow
+        // Mode 0: Substance 3D Painter & World Creator Multi-Layer PBR
+        // 1. Base Alpine Meadow / Subalpine Grassland
         vec3 albedo = uGrassColor;
         float roughness = uGrassRoughness;
 
@@ -403,51 +418,71 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         albedo = mix(albedo, uScreeColor, screeWeight);
         roughness = mix(roughness, uScreeRoughness, screeWeight);
 
-        // 3. Exposed Steep Bedrock & Cliff Granite (Slope & Wear rule)
+        // 3. Exposed Steep Bedrock & Cliff Granite (with Geological Horizontal Strata)
         float cliffWeight = smoothstep(0.24, 0.58, max(slope, vWear));
-        albedo = mix(albedo, uRockColor, cliffWeight);
+        float strataNoise = sin(vWorldPosition.y * 6.5 + sin(vWorldPosition.x * 0.6 + vWorldPosition.z * 0.6) * 0.5) * 0.5 + 0.5;
+        vec3 stratifiedRock = mix(uRockColor, uRockColor * vec3(1.15, 0.94, 0.82), strataNoise * 0.35);
+        albedo = mix(albedo, stratifiedRock, cliffWeight);
         roughness = mix(roughness, uRockRoughness, cliffWeight);
 
-        // Dark basalt fracture bands on extreme wear
+        // Dark basalt fracture fissures in high-wear crevices
         float basaltWeight = smoothstep(0.65, 0.95, vWear) * cliffWeight;
-        albedo = mix(albedo, uRockColor * 0.6, basaltWeight);
+        albedo = mix(albedo, uRockColor * 0.55, basaltWeight);
 
         // 4. Glacial Runoff & Wet Riverbed Veins (Flow rule)
         float flowWeight = smoothstep(0.28, 0.72, vFlow) * (1.0 - cliffWeight * 0.5);
         albedo = mix(albedo, uWaterColor, flowWeight);
-        roughness = mix(roughness, 0.12, flowWeight);
+        roughness = mix(roughness, 0.15, flowWeight);
 
-        // 5. Alpine Snowcap & Frost (Height & Slope rule)
-        float snowLine = uSnowHeight;
-        float snowWeight = smoothstep(snowLine, snowLine + 0.15, vHeight) * (1.0 - smoothstep(0.48, 0.80, slope));
-        albedo = mix(albedo, uSnowColor, snowWeight);
-        roughness = mix(roughness, uSnowRoughness, snowWeight);
+        // 5. World Machine Glacial Snow Accumulation & Couloirs
+        if (uSnowEnabled > 0.5) {
+          float snowLine = uSnowHeight;
+          float altGrad = smoothstep(snowLine, snowLine + uSnowMeltRate, vHeight);
+          // Slump angle: snow avalanches off steep cliffs (> 40 degrees)
+          float steepness = 1.0 - detailedN.y;
+          float slumpAdhere = 1.0 - smoothstep(uSnowSlumpAngle - 0.05, uSnowSlumpAngle + 0.18, steepness);
+          
+          // Snow gathers in couloirs, cirques, and flat hollows
+          float couloirGather = smoothstep(0.18, 0.55, vDeposition) * 0.55;
+          float snowWeight = clamp(altGrad * slumpAdhere + altGrad * couloirGather, 0.0, 1.0);
 
-        // Geological horizontal strata banding
-        float strata = sin(vWorldPosition.y * 14.0) * 0.5 + 0.5;
-        albedo *= (0.93 + strata * 0.12);
+          // Calibrated soft snow with blue ambient tone
+          albedo = mix(albedo, uSnowColor, snowWeight);
+          roughness = mix(roughness, uSnowRoughness, snowWeight);
+        }
 
-        // Natural Sun Lighting with Bounced Sky Ambient (prevents muddy black shadows)
+        // 6. Coastal Beach / Wet Shoreline (where terrain meets water level)
+        if (uWaterLevel > -5.0) {
+          float shoreDist = (vHeight * uHeightScale) - uWaterLevel;
+          if (shoreDist < 0.35 && shoreDist > -0.2) {
+            float shoreFactor = smoothstep(0.35, 0.0, shoreDist);
+            albedo = mix(albedo, uBeachColor, shoreFactor * 0.85);
+            roughness = mix(roughness, 0.22, shoreFactor * 0.8);
+          }
+        }
+
+        // Natural Sun Lighting with Bounced Sky Ambient Fill
         float NdotL = max(0.0, dot(detailedN, L));
-        float directDiffuse = pow(NdotL * 0.75 + 0.25, 1.25);
+        float directDiffuse = pow(NdotL * 0.72 + 0.28, 1.25);
 
-        // GGX-like Specular Highlights
+        // GGX Specular Highlights
         float NdotH = max(0.0, dot(detailedN, H));
         float specPower = mix(16.0, 96.0, 1.0 - roughness);
-        float specular = pow(NdotH, specPower) * (1.0 - roughness) * (flowWeight > 0.3 ? 0.8 : 0.4);
+        float specular = pow(NdotH, specPower) * (1.0 - roughness) * (flowWeight > 0.3 ? 0.85 : 0.4);
 
         // Cavity Ambient Occlusion in deep crevasses
-        float ao = 1.0 - smoothstep(0.35, 0.9, vWear) * 0.45 * uAmbientOcclusion;
+        float ao = 1.0 - smoothstep(0.35, 0.9, vWear) * 0.42 * uAmbientOcclusion;
 
         // Rim Lighting on Mountain Silhouettes
-        float rim = pow(1.0 - max(0.0, dot(N, V)), 3.5) * 0.25 * (1.0 - cliffWeight * 0.3);
+        float rim = pow(1.0 - max(0.0, dot(N, V)), 3.5) * 0.22 * (1.0 - cliffWeight * 0.25);
 
-        vec3 ambient = uAmbientColor * albedo * ao * 1.35;
-        vec3 direct = uSunColor * albedo * directDiffuse * uSunIntensity + uSunColor * specular * uSunIntensity;
-        vec3 finalColor = (ambient + direct + rim * uSunColor) * uExposure;
+        vec3 ambient = uAmbientColor * albedo * ao * 0.9;
+        vec3 direct = uSunColor * albedo * directDiffuse * (uSunIntensity * 0.8) + uSunColor * specular * uSunIntensity;
+        vec3 finalColor = ambient + direct + rim * uSunColor * 0.35;
+        finalColor *= (uExposure * 0.88);
 
         // Contrast adjustment
-        finalColor = pow(finalColor, vec3(uContrast));
+        finalColor = pow(max(vec3(0.0), finalColor), vec3(uContrast));
 
         gl_FragColor = vec4(finalColor, 1.0);
       }
@@ -478,9 +513,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         uScreeRoughness: { value: settings.pbr.screeRoughness },
         uGrassColor: { value: hexToVec3(settings.pbr.grassColor) },
         uGrassRoughness: { value: settings.pbr.grassRoughness },
+        uSnowEnabled: { value: settings.pbr.snowEnabled ? 1.0 : 0.0 },
         uSnowColor: { value: hexToVec3(settings.pbr.snowColor) },
         uSnowRoughness: { value: settings.pbr.snowRoughness },
         uSnowHeight: { value: settings.pbr.snowHeight },
+        uSnowMeltRate: { value: settings.pbr.snowMeltRate ?? 0.15 },
+        uSnowSlumpAngle: { value: settings.pbr.snowSlumpAngle ?? 0.42 },
+        uBeachColor: { value: hexToVec3(settings.pbr.beachColor || '#8a7d65') },
+        uWaterLevel: { value: settings.ocean.enabled ? settings.ocean.waterLevel * settings.heightScale : -10.0 },
         uWaterColor: { value: hexToVec3(settings.pbr.waterColor) },
         uNormalStrength: { value: settings.pbr.normalStrength },
         uTriplanarScale: { value: settings.pbr.triplanarScale },
@@ -772,9 +812,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     shaderMatRef.current.uniforms.uScreeRoughness.value = settings.pbr.screeRoughness;
     shaderMatRef.current.uniforms.uGrassColor.value.copy(hexToVec3(settings.pbr.grassColor));
     shaderMatRef.current.uniforms.uGrassRoughness.value = settings.pbr.grassRoughness;
+    shaderMatRef.current.uniforms.uSnowEnabled.value = settings.pbr.snowEnabled ? 1.0 : 0.0;
     shaderMatRef.current.uniforms.uSnowColor.value.copy(hexToVec3(settings.pbr.snowColor));
     shaderMatRef.current.uniforms.uSnowRoughness.value = settings.pbr.snowRoughness;
     shaderMatRef.current.uniforms.uSnowHeight.value = settings.pbr.snowHeight;
+    shaderMatRef.current.uniforms.uSnowMeltRate.value = settings.pbr.snowMeltRate ?? 0.15;
+    shaderMatRef.current.uniforms.uSnowSlumpAngle.value = settings.pbr.snowSlumpAngle ?? 0.42;
+    shaderMatRef.current.uniforms.uBeachColor.value.copy(hexToVec3(settings.pbr.beachColor || '#8a7d65'));
+    shaderMatRef.current.uniforms.uWaterLevel.value = settings.ocean.enabled ? settings.ocean.waterLevel * settings.heightScale : -10.0;
     shaderMatRef.current.uniforms.uWaterColor.value.copy(hexToVec3(settings.pbr.waterColor));
     shaderMatRef.current.uniforms.uNormalStrength.value = settings.pbr.normalStrength;
     shaderMatRef.current.uniforms.uTriplanarScale.value = settings.pbr.triplanarScale;
