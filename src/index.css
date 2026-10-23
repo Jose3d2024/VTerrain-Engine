@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@layer base {
+  /* Industrial custom dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #141517;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2D3139;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #00A8FF;
+  }
+
+  /* Smooth range slider styling */
+  input[type="range"] {
+    accent-color: #00A8FF;
+  }
+}
+
+/* Monospace font styling for numerical parameters */
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}

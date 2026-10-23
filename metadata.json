@@ -1,0 +1,6 @@
+{
+  "name": "VTerrain Engine - Next-Gen Procedural Terrain Studio",
+  "description": "Professional GPU-accelerated node-based procedural terrain generator and PBR studio inspired by Gaea, World Machine and Terragen.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
