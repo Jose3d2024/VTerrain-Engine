@@ -12,7 +12,8 @@ import {
   TerrainPreset,
 } from './types/terrain';
 import { TERRAIN_PRESETS } from './engine/presets';
-import { evaluateGraph, NODE_REGISTRY } from './engine/graphEvaluator';
+import { NODE_REGISTRY } from './engine/graphEvaluator';
+import { evaluateGraphAsync } from './engine/evaluateGraphAsync';
 import { Viewport3D } from './components/Viewport3D';
 import { GraphCanvas } from './components/GraphCanvas';
 import { StudioInspector } from './components/StudioInspector';
@@ -112,14 +113,54 @@ export default function App() {
   // Evaluate Graph for the pinned node (or active node if no pin)
   const evalTargetId = pinnedNodeId || activeNodeId;
 
-  const evalResult = useMemo(() => {
-    return evaluateGraph(
+  // Keep the first paint cheap; full terrain evaluation runs in a cancellable Web Worker.
+  const [evalResult, setEvalResult] = useState(() =>
+    NODE_REGISTRY && nodes.length
+      ? {
+          finalDataMap: {
+            width: 64,
+            height: 64,
+            heightmap: new Float32Array(64 * 64),
+            flowmap: new Float32Array(64 * 64),
+            deposition: new Float32Array(64 * 64),
+            wear: new Float32Array(64 * 64),
+          },
+          nodeOutputs: new Map(),
+          activeNodeId: evalTargetId,
+        }
+      : {
+          finalDataMap: {
+            width: 64,
+            height: 64,
+            heightmap: new Float32Array(64 * 64),
+            flowmap: new Float32Array(64 * 64),
+            deposition: new Float32Array(64 * 64),
+            wear: new Float32Array(64 * 64),
+          },
+          nodeOutputs: new Map(),
+          activeNodeId: '',
+        }
+  );
+  const [evaluationError, setEvaluationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setEvaluationError(null);
+    evaluateGraphAsync(
       nodes,
       connections,
       viewportSettings.resolution,
       viewportSettings.resolution,
-      evalTargetId
-    );
+      evalTargetId,
+      controller.signal
+    ).then((result) => {
+      setEvalResult(result);
+    }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setEvaluationError(error instanceof Error ? error.message : String(error));
+      console.error('Terrain graph evaluation failed:', error);
+    });
+    return () => controller.abort();
   }, [nodes, connections, viewportSettings.resolution, evalTargetId]);
 
   const displayDataMap = useMemo(() => {
